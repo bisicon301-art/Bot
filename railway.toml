@@ -3,4 +3,4 @@ builder = "dockerfile"
 
 [deploy]
 restartPolicyType = "always"
-restartPolicyMaxRetries = 0
+restartPolicyMaxRetries = 3
