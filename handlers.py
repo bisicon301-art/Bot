@@ -1,4 +1,4 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import ContextTypes, ConversationHandler
 from database import Database
 from utils import *
@@ -60,41 +60,49 @@ class UserHandlers:
         message += f"🔗 Active Referrals: {referral_stats.get('active_referrals', 0)}\n"
         message += f"📊 Total Referrals: {referral_stats.get('total_referrals', 0)}\n"
         
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("💰 Wallet", callback_data="menu_wallet"),
-             InlineKeyboardButton("🔗 Referral", callback_data="menu_referral")],
-            [InlineKeyboardButton("⚙️ Settings", callback_data="menu_settings")]
-        ])
+        # Reply Keyboard
+        reply_keyboard = ReplyKeyboardMarkup(
+            [
+                [KeyboardButton("💰 Wallet"), KeyboardButton("🔗 Referral")],
+                [KeyboardButton("⚙️ Settings")]
+            ],
+            resize_keyboard=True,
+            one_time_keyboard=False
+        )
         
         try:
-            await context.bot.send_message(chat_id, message, reply_markup=keyboard, parse_mode='HTML')
+            if update.callback_query:
+                await update.callback_query.edit_message_text(message, parse_mode='HTML')
+            else:
+                await context.bot.send_message(chat_id, message, reply_markup=reply_keyboard, parse_mode='HTML')
         except Exception as e:
             logger.error(f"Error sending message: {e}")
-            await context.bot.send_message(chat_id, message)
+            await context.bot.send_message(chat_id, message, reply_markup=reply_keyboard)
 
     async def menu_wallet(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        query = update.callback_query
         user_id = update.effective_user.id
-        
-        await query.answer()
         
         balance = await self.db.get_balance(user_id)
         message = f"💰 <b>Wallet</b>\n\nBalance: {Formatting.format_balance(balance)}\n\n"
         
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("💳 Withdraw", callback_data="wallet_withdraw")],
-            [InlineKeyboardButton("🔄 Refresh", callback_data="menu_wallet"),
-             InlineKeyboardButton("⬅️ Back", callback_data="menu_main")]
-        ])
+        # Reply Keyboard
+        reply_keyboard = ReplyKeyboardMarkup(
+            [
+                [KeyboardButton("💳 Withdraw")],
+                [KeyboardButton("🔄 Refresh"), KeyboardButton("⬅️ Back")]
+            ],
+            resize_keyboard=True,
+            one_time_keyboard=False
+        )
         
-        await query.edit_message_text(message, reply_markup=keyboard, parse_mode='HTML')
+        if update.message:
+            await update.message.reply_text(message, reply_markup=reply_keyboard, parse_mode='HTML')
+        else:
+            await update.callback_query.message.reply_text(message, reply_markup=reply_keyboard, parse_mode='HTML')
 
     async def wallet_withdraw(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        query = update.callback_query
         user_id = update.effective_user.id
-        chat_id = query.message.chat_id
-        
-        await query.answer()
+        chat_id = update.effective_chat.id
         
         settings = await self.db.get_admin_settings()
         min_withdrawal = float(settings.get('min_withdrawal', 10))
@@ -161,38 +169,46 @@ class UserHandlers:
         withdrawal_id = await self.db.create_withdrawal(user_id, amount, wallet_address)
         
         message = f"✅ <b>Withdrawal Request Created</b>\n\nID: <code>{withdrawal_id}</code>\nAmount: {Formatting.format_balance(amount)}\nWallet: <code>{wallet_address}</code>\n\nYour request will be processed within 48 hours.\nYou will receive a notification when approved or rejected."
-        await update.message.reply_text(message, parse_mode='HTML')
+        
+        reply_keyboard = ReplyKeyboardMarkup(
+            [[KeyboardButton("⬅️ Back to Menu")]],
+            resize_keyboard=True,
+            one_time_keyboard=False
+        )
+        
+        await update.message.reply_text(message, reply_markup=reply_keyboard, parse_mode='HTML')
         
         return ConversationHandler.END
 
     async def menu_referral(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        query = update.callback_query
         user_id = update.effective_user.id
-        
-        await query.answer()
         
         referral_link = await self.db.get_referral_link(user_id)
         stats = await self.db.get_user_referrals(user_id)
         
         message = f"🔗 <b>Referral Link</b>\n\nShare your link:\n{Formatting.format_referral_link(referral_link)}\n\n📊 <b>Statistics</b>\nTotal Referrals: {stats.get('total_referrals', 0)}\nActive Referrals: {stats.get('active_referrals', 0)}\nTotal Earned: {Formatting.format_balance(float(stats.get('total_earned', 0)))}"
         
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📋 Copy Link", callback_data="referral_copy_link")],
-            [InlineKeyboardButton("🔄 Refresh", callback_data="menu_referral"),
-             InlineKeyboardButton("⬅️ Back", callback_data="menu_main")]
-        ])
+        reply_keyboard = ReplyKeyboardMarkup(
+            [
+                [KeyboardButton("📋 Copy Link")],
+                [KeyboardButton("🔄 Refresh"), KeyboardButton("⬅️ Back")]
+            ],
+            resize_keyboard=True,
+            one_time_keyboard=False
+        )
         
-        await query.edit_message_text(message, reply_markup=keyboard, parse_mode='HTML')
+        if update.message:
+            await update.message.reply_text(message, reply_markup=reply_keyboard, parse_mode='HTML')
+        else:
+            await update.callback_query.message.reply_text(message, reply_markup=reply_keyboard, parse_mode='HTML')
 
     async def referral_copy_link(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        query = update.callback_query
-        await query.answer("Link copied! Share it to earn bonuses.", show_alert=False)
+        user_id = update.effective_user.id
+        referral_link = await self.db.get_referral_link(user_id)
+        await update.message.reply_text(f"✅ Link copied!\n\n{referral_link}\n\nShare it to earn bonuses!")
 
     async def menu_settings(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        query = update.callback_query
         user_id = update.effective_user.id
-        
-        await query.answer()
         
         db_user = await self.db.get_user(user_id)
         
@@ -200,38 +216,51 @@ class UserHandlers:
         message += f"• IP Verification: {'✅' if db_user.get('ip_verified') else '❌'}\n"
         message += f"• Channel Verification: {'✅' if db_user.get('channels_verified') else '❌'}\n\n"
         
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🌐 Verify IP", callback_data="verify_ip")],
-            [InlineKeyboardButton("📺 Verify Channels", callback_data="verify_channels")],
-            [InlineKeyboardButton("⬅️ Back", callback_data="menu_main")]
-        ])
+        reply_keyboard = ReplyKeyboardMarkup(
+            [
+                [KeyboardButton("🌐 Verify IP"), KeyboardButton("📺 Verify Channels")],
+                [KeyboardButton("⬅️ Back")]
+            ],
+            resize_keyboard=True,
+            one_time_keyboard=False
+        )
         
-        await query.edit_message_text(message, reply_markup=keyboard, parse_mode='HTML')
+        if update.message:
+            await update.message.reply_text(message, reply_markup=reply_keyboard, parse_mode='HTML')
+        else:
+            await update.callback_query.message.reply_text(message, reply_markup=reply_keyboard, parse_mode='HTML')
 
     async def verify_ip(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        query = update.callback_query
         user_id = update.effective_user.id
-        
-        await query.answer()
         
         ip_address = IPVerification.get_user_ip_sync()
         success = await self.db.verify_user_ip(user_id, ip_address)
         
         if success:
-            await query.edit_message_text("✅ IP verified successfully!", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="menu_settings")]]))
+            message = "✅ IP verified successfully!"
         else:
-            await query.edit_message_text("❌ IP verification failed - duplicate IP detected.\nYour account has been banned.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="menu_settings")]]))
+            message = "❌ IP verification failed - duplicate IP detected.\nYour account has been banned."
+        
+        reply_keyboard = ReplyKeyboardMarkup(
+            [[KeyboardButton("⬅️ Back to Menu")]],
+            resize_keyboard=True,
+            one_time_keyboard=False
+        )
+        
+        await update.message.reply_text(message, reply_markup=reply_keyboard)
 
     async def verify_channels(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        query = update.callback_query
         user_id = update.effective_user.id
-        
-        await query.answer()
         
         channels = await self.db.get_mandatory_channels()
         
         if not channels:
-            await query.edit_message_text("ℹ️ No mandatory channels configured yet.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="menu_settings")]]))
+            reply_keyboard = ReplyKeyboardMarkup(
+                [[KeyboardButton("⬅️ Back to Menu")]],
+                resize_keyboard=True,
+                one_time_keyboard=False
+            )
+            await update.message.reply_text("ℹ️ No mandatory channels configured yet.", reply_markup=reply_keyboard)
             return
         
         all_subscribed = await ChannelVerification.verify_all_mandatory_channels(context, user_id, [ch['channel_name'] for ch in channels])
@@ -243,48 +272,27 @@ class UserHandlers:
         else:
             message = "❌ Please subscribe to all mandatory channels:\n\n" + channel_list
         
-        await query.edit_message_text(message, reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔄 Retry", callback_data="verify_channels")],
-            [InlineKeyboardButton("⬅️ Back", callback_data="menu_settings")]
-        ]), parse_mode='HTML')
+        reply_keyboard = ReplyKeyboardMarkup(
+            [
+                [KeyboardButton("🔄 Retry")],
+                [KeyboardButton("⬅️ Back to Menu")]
+            ],
+            resize_keyboard=True,
+            one_time_keyboard=False
+        )
+        
+        await update.message.reply_text(message, reply_markup=reply_keyboard, parse_mode='HTML')
 
-    async def menu_main(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        query = update.callback_query
+    async def handle_back(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
-        
-        await query.answer()
         db_user = await self.db.get_user(user_id)
-        
-        ip_verified = db_user.get('ip_verified', False)
-        channels_verified = db_user.get('channels_verified', False)
-        
-        message = "🤖 <b>Referral Bot Menu</b>\n\n"
-        
-        if not ip_verified or not channels_verified:
-            message += "⚠️ <b>Verification Required</b>\n"
-            if not ip_verified:
-                message += "• ❌ IP Verification\n"
-            if not channels_verified:
-                message += "• ❌ Channel Verification\n"
-            message += "\nPlease complete verification to use all features.\n\n"
-        else:
-            message += "✅ <b>Verification Complete</b>\n\n"
-        
-        balance = await self.db.get_balance(user_id)
-        message += f"💰 Balance: {Formatting.format_balance(balance)}\n\n"
-        
-        referral_stats = await self.db.get_user_referrals(user_id)
-        message += f"🔗 Active Referrals: {referral_stats.get('active_referrals', 0)}\n"
-        message += f"📊 Total Referrals: {referral_stats.get('total_referrals', 0)}\n"
-        
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("💰 Wallet", callback_data="menu_wallet"),
-             InlineKeyboardButton("🔗 Referral", callback_data="menu_referral")],
-            [InlineKeyboardButton("⚙️ Settings", callback_data="menu_settings")]
-        ])
-        
-        await query.edit_message_text(message, reply_markup=keyboard, parse_mode='HTML')
+        await self.show_main_menu(update, context, db_user)
 
     async def cancel(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        await update.message.reply_text("❌ Operation cancelled.")
+        reply_keyboard = ReplyKeyboardMarkup(
+            [[KeyboardButton("⬅️ Back to Menu")]],
+            resize_keyboard=True,
+            one_time_keyboard=False
+        )
+        await update.message.reply_text("❌ Operation cancelled.", reply_markup=reply_keyboard)
         return ConversationHandler.END
